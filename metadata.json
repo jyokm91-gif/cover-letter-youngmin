@@ -1,0 +1,5 @@
+{
+  "name": "AI Cover Letter Pipeline",
+  "description": "An advanced web application that uses a two-step Gemini AI pipeline to generate, analyze, and refine high-quality Korean cover letters (자기소개서) based on user inputs and job descriptions.",
+  "requestFramePermissions": []
+}
