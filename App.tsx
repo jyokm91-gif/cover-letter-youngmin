@@ -1,7 +1,13 @@
 
 import React, { useState, useCallback } from 'react';
 import { InputState, JobOption, ProofreadingIssue } from './types';
-import { GEM1_SYSTEM_PROMPT, GEM2_SYSTEM_PROMPT, GEM3_SYSTEM_PROMPT } from './constants';
+import { 
+    PROMPT_STEP_1_ARCHITECT, 
+    PROMPT_STEP_2_WRITER, 
+    PROMPT_STEP_3_CRITIC, 
+    PROMPT_STEP_4_STRATEGIST, 
+    PROMPT_STEP_5_EDITOR 
+} from './constants';
 import { callGemini, callProofreaderGemini } from './services/geminiService';
 import InputSection from './components/InputSection';
 import LoadingIndicator from './components/LoadingIndicator';
@@ -43,24 +49,11 @@ const App: React.FC = () => {
         setProofreadingResult(null);
         
         try {
-            // --- 1단계: 초안 생성 (Gem 1) ---
-            setLoadingStatus("AI가 자기소개서를 작성 중입니다... (1/4 단계)");
-            const prompt1 = initialDraft
-                ? `## [필수 입력 데이터]\n[사용자 배경 정보]:\n${userInfo}\n\n[채용 정보]:\n${jobPosting}\n\n[문항 정보]:\n${jasaoseoQuestions}\n\n[사용자 제공 초안]:\n${initialDraft}\n\n## [1차 임무: 생성]\n당신의 임무(워크플로우 A)를 수행하십시오. 위 데이터를 기반으로 하되, 특히 [사용자 제공 초안]을 바탕으로 이를 *개선하고 발전시킨* 자기소개서를 생성하십시오.`
-                : `## [필수 입력 데이터]\n[사용자 배경 정보]:\n${userInfo}\n\n[채용 정보]:\n${jobPosting}\n\n[문항 정보]:\n${jasaoseoQuestions}\n\n## [1차 임무: 생성]\n당신의 임무(워크플로우 A)를 수행하십시오. 위 데이터를 기반으로 새로운 자기소개서를 생성하십시오.`;
-            
-            const generatedDraft = await callGemini(GEM1_SYSTEM_PROMPT, prompt1, jobOption, { useSearchGrounding, useThinkingMode });
-            
-            // --- 2단계: 분석 (Gem 2) ---
-            setLoadingStatus("AI 전문가가 초안을 분석 중입니다... (2/4 단계)");
-            const prompt2 = `## [필수 입력 데이터]\n[평가 대상 자기소개서]:\n${generatedDraft}\n\n[채용 공고(JD)]:\n${jobPosting}\n\n[지원자 배경 정보]:\n${userInfo}\n\n## [임무]\n당신의 역할(최고 인재 책임자)을 수행하십시오. 위 데이터를 바탕으로 [평가 대상 자기소개서]를 냉철하게 분석하고, [자기소개서 수정 제안 보고서]를 [5. 출력 형식]에 맞춰 정확하게 생성하십시오.`;
-            
-            const report = await callGemini(GEM2_SYSTEM_PROMPT, prompt2, jobOption, { useSearchGrounding, useThinkingMode });
-            setAnalysisReport(report);
-
-            // --- 3단계: 수정본 생성 (Gem 1) ---
-            setLoadingStatus("AI가 분석 리포트를 반영하여 수정 중입니다... (3/4 단계)");
-            const prompt3 = `## [필수 입력 데이터]
+            // --- 1단계: 구조 설계 (Architect) ---
+            setLoadingStatus("1/5단계: AI 설계자가 경험을 분석하여 최적의 논리 구조를 설계 중입니다...");
+            const prompt1 = `
+[필수 입력 데이터]
+[선택된 직무]: ${jobRole}
 [사용자 배경 정보]:
 ${userInfo}
 
@@ -70,28 +63,75 @@ ${jobPosting}
 [문항 정보]:
 ${jasaoseoQuestions}
 
-[초안 자기소개서]:
+${initialDraft ? `[사용자 제공 초안 (참고용)]:\n${initialDraft}` : ''}
+`;
+            const blueprint = await callGemini(PROMPT_STEP_1_ARCHITECT, prompt1, jobOption, { useSearchGrounding, useThinkingMode });
+            
+            // --- 2단계: 초안 작성 (Writer) ---
+            setLoadingStatus("2/5단계: AI 작가가 설계도를 바탕으로 설득력 있는 초안을 작성 중입니다...");
+            const prompt2 = `
+[자기소개서 설계도]:
+${blueprint}
+
+[선택된 직무]: ${jobRole}
+
+[채용 정보]:
+${jobPosting}
+
+[문항 정보]:
+${jasaoseoQuestions}
+`;
+            const generatedDraft = await callGemini(PROMPT_STEP_2_WRITER, prompt2, jobOption, { useThinkingMode });
+
+            // --- 3단계: 검증 (Critic) ---
+            setLoadingStatus("3/5단계: CTO급 AI 면접관이 초안을 냉정하게 평가 중입니다...");
+            const prompt3 = `
+[2단계 결과물]:
 ${generatedDraft}
 
-[전문가 수정 제안]:
-${report}
+[선택된 직무]: ${jobRole}
 
-## [2차 임무: 수정]
-당신의 임무(워크플로우 B)를 수행하십시오. 당신이 작성했던 [초안 자기소개서]와 방금 받은 [전문가 수정 제안]을 확인했습니다.
-[전문가 수정 제안]에 담긴 **모든 피드백과 지적 사항을 100% 수용하고 완벽하게 반영**하여, [초안 자기소개서]를 전면적으로 *수정한* 최종 자기소개서를 생성하십시오.
+[채용 공고(JD)]:
+${jobPosting}
+`;
+            const critiqueReport = await callGemini(PROMPT_STEP_3_CRITIC, prompt3, jobOption, { useThinkingMode });
 
-**[강력한 제약 조건 - 위반 시 시스템 오류 발생]**
-1. 결과물에 "다음은 수정된 자기소개서입니다"와 같은 서론, 설명, 인삿말, 맺음말을 **절대** 포함하지 마십시오.
-2. 결과물에 ** (볼드체) 마크다운 문법을 **절대** 사용하지 마십시오. 강조가 필요하다면 단어 선택으로 표현하십시오.
-3. 오직 자기소개서의 문항 제목과 본문 내용만 출력하십시오.`;
+            // --- 4단계: 전략 수립 (Strategist) ---
+            setLoadingStatus("4/5단계: AI 전략가가 합격을 위한 구체적인 수정 전략을 수립 중입니다...");
+            const prompt4 = `
+[2단계 결과물]:
+${generatedDraft}
 
-            const finalResult = await callGemini(GEM1_SYSTEM_PROMPT, prompt3, jobOption, { useThinkingMode });
+[3단계 비판 리포트]:
+${critiqueReport}
+
+[채용 공고(JD)]:
+${jobPosting}
+`;
+            const strategyReport = await callGemini(PROMPT_STEP_4_STRATEGIST, prompt4, jobOption, { useThinkingMode });
+            
+            // Store analysis report (Critique + Strategy) for the user to see in the tab
+            setAnalysisReport(`${critiqueReport}\n\n${strategyReport}`);
+
+            // --- 5단계: 최종 완성 (Editor) ---
+            setLoadingStatus("5/5단계: 총괄 에디터가 전략을 반영하여 최종 자소서를 완성하고 팩트를 검증 중입니다...");
+            const prompt5 = `
+[2단계 결과물]:
+${generatedDraft}
+
+[4단계 수정 전략]:
+${strategyReport}
+
+[사용자 배경 정보 원본]:
+${userInfo}
+`;
+            const finalResult = await callGemini(PROMPT_STEP_5_EDITOR, prompt5, jobOption, { useThinkingMode });
             setFinalJasaoseo(finalResult);
             
-            // --- 4단계: 맞춤법 검사 (Gem 3) ---
-            setLoadingStatus("AI가 맞춤법 및 문법을 검사 중입니다... (4/4 단계)");
-            const proofread = await callProofreaderGemini(GEM3_SYSTEM_PROMPT, finalResult);
-            setProofreadingResult(proofread);
+            // Note: Proofreading is now integrated into Step 5 (Editor). 
+            // We skip the separate proofreading call to save time, unless explicitly needed.
+            // If the user wants the structured proofreading JSON view, they can click "맞춤법 검사" later if we implement a separate button, 
+            // but for now, we rely on the Editor's output.
 
         } catch (err) {
             console.error("Pipeline error:", err);
@@ -114,45 +154,25 @@ ${report}
         setError(null);
 
         try {
-            const { jobRole, jobPosting, userInfo, jasaoseoQuestions, useThinkingMode } = inputState;
+            const { jobRole, userInfo, useThinkingMode } = inputState;
             const jobOption = jobRole as JobOption;
 
-            // --- 수정 단계 (Gem 1) ---
+            // --- 수정 단계 (Using Editor Persona) ---
+            // Treat the user's request as the "Strategy" for the Editor
             const revisionPrompt = `
-## [기존 데이터]
-[사용자 배경 정보]:
-${userInfo}
-
-[채용 정보]:
-${jobPosting}
-
-[문항 정보]:
-${jasaoseoQuestions}
-
-## [현재 자기소개서]
+[2단계 결과물]:
 ${finalJasaoseo}
 
-## [사용자 수정 요청]
+[4단계 수정 전략 (사용자 요청사항)]:
 ${revisionRequest}
 
-## [최종 임무: 수정]
-당신은 AI 자기소개서 작성 전문가입니다. 위 [기존 데이터]를 바탕으로 작성된 [현재 자기소개서]를 확인했습니다.
-이제 [사용자 수정 요청]에 담긴 **모든 피드백을 100% 반영**하여, [현재 자기소개서]를 *수정한* 최종 자기소개서를 생성하십시오.
-사용자의 요구사항을 최우선으로 고려하여 길이를 15% 이상 줄이거나 늘리는 등의 조정을 수행하십시오.
-
-**[강력한 제약 조건 - 위반 시 시스템 오류 발생]**
-1. 결과물에 "다음은 요청하신 사항을 반영한..." 또는 "수정된 내용은..."과 같은 서론, 설명, 인삿말을 **절대** 포함하지 마십시오.
-2. 결과물에 ** (볼드체) 마크다운 문법을 **절대** 사용하지 마십시오.
-3. 오직 수정된 자기소개서의 본문만 출력해야 합니다.
+[사용자 배경 정보 원본]:
+${userInfo}
 `;
             
-            const revisedJasaoseo = await callGemini(GEM1_SYSTEM_PROMPT, revisionPrompt, jobOption, { useThinkingMode });
+            const revisedJasaoseo = await callGemini(PROMPT_STEP_5_EDITOR, revisionPrompt, jobOption, { useThinkingMode });
             setFinalJasaoseo(revisedJasaoseo);
             
-            // --- 수정본 맞춤법 검사 (Gem 3) ---
-            const proofread = await callProofreaderGemini(GEM3_SYSTEM_PROMPT, revisedJasaoseo);
-            setProofreadingResult(proofread);
-
             setRevisionRequest(''); // Clear input after successful revision
 
         } catch (err) {
