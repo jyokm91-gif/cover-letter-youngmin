@@ -7,7 +7,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { extractTextFromImage, fetchJobPostingFromUrl } from '../services/geminiService';
 
 // Set the worker source for pdf.js. This is required for it to work in a web environment.
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@4.5.136/build/pdf.worker.min.mjs`;
 
 interface InputSectionProps {
     inputState: InputState;
