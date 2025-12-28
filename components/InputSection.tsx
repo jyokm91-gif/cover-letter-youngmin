@@ -1,7 +1,13 @@
-import React, { useRef } from 'react';
+
+import React, { useRef, useState } from 'react';
 import type { InputState } from '../types';
-import { EXPERIENCE_TEMPLATE } from '../constants';
+import { EXPERIENCE_TEMPLATE, JOB_POSTING_TEMPLATE } from '../constants';
 import InfoIcon from './icons/InfoIcon';
+import * as pdfjsLib from 'pdfjs-dist';
+import { extractTextFromImage, fetchJobPostingFromUrl } from '../services/geminiService';
+
+// Set the worker source for pdf.js. This is required for it to work in a web environment.
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.mjs`;
 
 interface InputSectionProps {
     inputState: InputState;
@@ -20,7 +26,12 @@ const Tooltip: React.FC<{ text: string; children: React.ReactNode }> = ({ text, 
 );
 
 const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, onGenerate, isLoading }) => {
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const userInfoFileInputRef = useRef<HTMLInputElement>(null);
+    const draftFileInputRef = useRef<HTMLInputElement>(null);
+    const jobPostingFileInputRef = useRef<HTMLInputElement>(null);
+    const [isExtractingText, setIsExtractingText] = useState(false);
+    const [jobPostingUrl, setJobPostingUrl] = useState('');
+    const [isFetchingUrl, setIsFetchingUrl] = useState(false);
     
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value, type } = e.target;
@@ -33,38 +44,182 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
         }
     };
 
-    const addTemplate = () => {
+    const addExperienceTemplate = () => {
         setInputState(prev => ({
             ...prev,
             userInfo: prev.userInfo ? `${prev.userInfo}\n\n${EXPERIENCE_TEMPLATE}` : EXPERIENCE_TEMPLATE
         }));
     };
 
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+    const addJobPostingTemplate = () => {
+        setInputState(prev => ({
+            ...prev,
+            jobPosting: prev.jobPosting ? `${prev.jobPosting}\n\n${JOB_POSTING_TEMPLATE}` : JOB_POSTING_TEMPLATE
+        }));
+    };
 
-        e.target.value = '';
-
-        if (file.type !== 'text/plain' && file.type !== 'text/markdown') {
-            alert('지원되지 않는 파일 형식입니다. .txt 또는 .md 파일을 업로드해주세요.');
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, targetStateKey: 'userInfo' | 'initialDraft') => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+        
+        if (files.length > 5) {
+            alert('최대 5개의 파일만 업로드할 수 있습니다.');
+            e.target.value = ''; // Reset file input
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const text = event.target?.result as string;
-            setInputState(prev => ({...prev, userInfo: text}));
-            alert(`${file.name} 파일의 내용을 성공적으로 불러왔습니다.`);
-        };
-        reader.onerror = (error) => {
-            console.error("File reading error:", error);
-            alert("파일을 읽는 중 오류가 발생했습니다.");
-        };
-        reader.readAsText(file, 'UTF-8');
+        const fileReadPromises: Promise<string>[] = [];
+
+        Array.from(files).forEach((file: File) => {
+            if (file.type === 'application/pdf') {
+                const promise = new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = async (event) => {
+                        try {
+                            const arrayBuffer = event.target?.result as ArrayBuffer;
+                            if (!arrayBuffer) {
+                                return reject(`파일(${file.name})을 읽을 수 없습니다.`);
+                            }
+                            const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+                            let pdfText = '';
+                            for (let i = 1; i <= pdf.numPages; i++) {
+                                const page = await pdf.getPage(i);
+                                const textContent = await page.getTextContent();
+                                pdfText += textContent.items.map(item => ('str' in item ? item.str : '')).join(' ') + '\n';
+                            }
+                            resolve(`--- START OF FILE: ${file.name} ---\n\n${pdfText}\n--- END OF FILE: ${file.name} ---`);
+                        } catch (error) {
+                            console.error(`Error parsing PDF ${file.name}:`, error);
+                            const errorMessage = error instanceof Error ? error.message : String(error);
+                            reject(`PDF 파일(${file.name}) 처리 중 오류 발생: ${errorMessage}`);
+                        }
+                    };
+                    reader.onerror = () => reject(`파일(${file.name}) 읽기 오류`);
+                    reader.readAsArrayBuffer(file);
+                });
+                fileReadPromises.push(promise);
+            } else if (file.type === 'text/plain' || file.type === 'text/markdown') {
+                const promise = new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                       const textContent = event.target?.result as string;
+                       resolve(`--- START OF FILE: ${file.name} ---\n\n${textContent}\n--- END OF FILE: ${file.name} ---`);
+                    };
+                    reader.onerror = () => reject(`파일(${file.name}) 읽기 오류`);
+                    reader.readAsText(file, 'UTF-8');
+                });
+                fileReadPromises.push(promise);
+            } else {
+                 alert(`지원되지 않는 파일 형식입니다: ${file.name}. .txt, .md, .pdf 파일만 업로드해주세요.`);
+            }
+        });
+
+        try {
+            const texts = await Promise.all(fileReadPromises);
+            const combinedText = texts.join('\n\n');
+            setInputState(prev => ({
+                ...prev,
+                [targetStateKey]: prev[targetStateKey] ? `${prev[targetStateKey]}\n\n${combinedText}` : combinedText
+            }));
+            alert(`${files.length}개 파일의 내용을 성공적으로 불러왔습니다.`);
+        } catch (error) {
+            alert(String(error));
+        } finally {
+            if (e.target) {
+                e.target.value = ''; // Reset file input to allow re-uploading the same file
+            }
+        }
     };
 
-    const triggerFileSelect = () => fileInputRef.current?.click();
+    const blobToBase64 = (blob: Blob): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const dataUrl = reader.result as string;
+                const base64String = dataUrl.split(',')[1];
+                resolve(base64String);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    };
+
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+    
+        if (files.length > 5) {
+            alert('최대 5개의 이미지만 업로드할 수 있습니다.');
+            e.target.value = '';
+            return;
+        }
+        
+        setIsExtractingText(true);
+    
+        const imageReadPromises: Promise<string>[] = [];
+    
+        // FIX: Replaced for...of loop with forEach and explicitly typed 'file' as File
+        // to resolve type inference issues where 'file' was treated as 'unknown'.
+        Array.from(files).forEach((file: File) => {
+            const promise = (async () => {
+                try {
+                    const base64Data = await blobToBase64(file);
+                    const extractedText = await extractTextFromImage(base64Data, file.type);
+                    return `--- START OF IMAGE TEXT: ${file.name} ---\n\n${extractedText}\n--- END OF IMAGE TEXT: ${file.name} ---`;
+                } catch (error) {
+                    console.error(`Error processing image ${file.name}:`, error);
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    throw new Error(`이미지 파일(${file.name}) 처리 중 오류 발생: ${errorMessage}`);
+                }
+            })();
+            imageReadPromises.push(promise);
+        });
+    
+        try {
+            const texts = await Promise.all(imageReadPromises);
+            const combinedText = texts.join('\n\n');
+            setInputState(prev => ({
+                ...prev,
+                jobPosting: prev.jobPosting ? `${prev.jobPosting}\n\n${combinedText}` : combinedText
+            }));
+            alert(`${files.length}개 이미지의 텍스트를 성공적으로 추출했습니다.`);
+        } catch (error) {
+            alert(String(error));
+        } finally {
+            setIsExtractingText(false);
+            if (e.target) {
+                e.target.value = '';
+            }
+        }
+    };
+
+    const handleFetchJobPosting = async () => {
+        if (!jobPostingUrl.trim()) {
+            alert('채용 공고 URL을 입력해주세요.');
+            return;
+        }
+        setIsFetchingUrl(true);
+        try {
+            const fetchedText = await fetchJobPostingFromUrl(jobPostingUrl);
+            setInputState(prev => ({
+                ...prev,
+                jobPosting: prev.jobPosting 
+                    ? `${prev.jobPosting}\n\n--- URL에서 가져온 내용: ${jobPostingUrl} ---\n\n${fetchedText}\n--- URL 내용 끝 ---` 
+                    : fetchedText
+            }));
+            alert('채용 공고를 성공적으로 가져왔습니다.');
+            setJobPostingUrl(''); // Clear the input after success
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            alert(`오류: ${errorMessage}`);
+        } finally {
+            setIsFetchingUrl(false);
+        }
+    };
+
+    const triggerUserInfoFileSelect = () => userInfoFileInputRef.current?.click();
+    const triggerDraftFileSelect = () => draftFileInputRef.current?.click();
+    const triggerJobPostingFileSelect = () => jobPostingFileInputRef.current?.click();
 
     return (
         <div className="bg-white p-6 rounded-2xl shadow-lg mb-8">
@@ -83,8 +238,40 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
                         </select>
                     </div>
                     <div>
-                        <label htmlFor="jobPosting" className="block text-sm font-medium text-gray-700 mb-1">채용 공고 (JD)</label>
-                        <textarea id="jobPosting" name="jobPosting" value={inputState.jobPosting} onChange={handleInputChange} rows={10} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="지원할 회사의 채용 공고 내용을 여기에 붙여넣으세요..."></textarea>
+                        <div className="flex justify-between items-center mb-1">
+                            <label htmlFor="jobPosting" className="block text-sm font-medium text-gray-700">채용 공고 (JD)</label>
+                            <div className="flex items-center gap-2">
+                                <button onClick={addJobPostingTemplate} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1 px-2 rounded-md transition-colors">템플릿 추가</button>
+                                <button onClick={triggerJobPostingFileSelect} disabled={isExtractingText} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1 px-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-wait flex items-center justify-center gap-1">
+                                    {isExtractingText && (
+                                        <svg className="animate-spin h-3 w-3 text-slate-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    )}
+                                    {isExtractingText ? '추출 중...' : '이미지 업로드'}
+                                </button>
+                                <input type="file" ref={jobPostingFileInputRef} onChange={handleImageUpload} accept="image/png,image/jpeg,image/webp" className="hidden" multiple />
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <input 
+                                type="url" 
+                                value={jobPostingUrl}
+                                onChange={(e) => setJobPostingUrl(e.target.value)}
+                                placeholder="채용 공고 URL을 여기에 붙여넣으세요"
+                                className="flex-grow p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                disabled={isFetchingUrl}
+                            />
+                            <button 
+                                onClick={handleFetchJobPosting}
+                                disabled={isFetchingUrl || !jobPostingUrl.trim()}
+                                className="bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-wait"
+                            >
+                                {isFetchingUrl ? '가져오는 중...' : '가져오기'}
+                            </button>
+                        </div>
+                        <textarea id="jobPosting" name="jobPosting" value={inputState.jobPosting} onChange={handleInputChange} rows={8} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="지원할 회사의 채용 공고 내용을 여기에 붙여넣거나, 위에서 URL을 가져오세요..."></textarea>
                     </div>
                     <div>
                         <label htmlFor="jasaoseoQuestions" className="block text-sm font-medium text-gray-700 mb-1">자기소개서 문항</label>
@@ -96,19 +283,26 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
                         <div className="flex justify-between items-center mb-1">
                             <label htmlFor="userInfo" className="block text-sm font-medium text-gray-700">사용자 배경 정보</label>
                             <div className="flex items-center gap-2">
-                                <button onClick={addTemplate} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1 px-2 rounded-md transition-colors">템플릿 추가</button>
-                                <button onClick={triggerFileSelect} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1 px-2 rounded-md transition-colors">파일 업로드</button>
-                                <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".txt,.md" className="hidden" />
+                                <button onClick={addExperienceTemplate} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1 px-2 rounded-md transition-colors">템플릿 추가</button>
+                                <button onClick={triggerUserInfoFileSelect} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1 px-2 rounded-md transition-colors">파일 업로드 (최대 5개)</button>
+                                <input type="file" ref={userInfoFileInputRef} onChange={(e) => handleFileUpload(e, 'userInfo')} accept=".txt,.md,.pdf" className="hidden" multiple />
                             </div>
                         </div>
-                        <textarea id="userInfo" name="userInfo" value={inputState.userInfo} onChange={handleInputChange} rows={18} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="본인의 이력서, 경력기술서, 포트폴리오, 관련 경험, 성과 등을 여기에 붙여넣으세요..."></textarea>
+                        <textarea id="userInfo" name="userInfo" value={inputState.userInfo} onChange={handleInputChange} rows={18} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="본인의 이력서, 경력기술서, 포트폴리오, 관련 경험, 성과 등을 여기에 붙여넣거나 파일을 업로드하세요."></textarea>
                         <div className="mt-1 p-2 bg-amber-50 text-amber-800 text-xs rounded-md border border-amber-200">
                             <strong>Tip:</strong> 배경 정보가 구체적이고 풍부할수록 AI가 생성하는 자기소개서의 품질이 향상됩니다.
                         </div>
                     </div>
                     <div>
-                        <label htmlFor="initialDraft" className="block text-sm font-medium text-gray-700 mb-1">자기소개서 초안 (선택 사항)</label>
-                        <textarea id="initialDraft" name="initialDraft" value={inputState.initialDraft} onChange={handleInputChange} rows={6} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="기존에 작성한 초안이 있다면 여기에 붙여넣으세요. AI가 이 내용을 바탕으로 개선합니다."></textarea>
+                        <div className="flex justify-between items-center mb-1">
+                            <label htmlFor="initialDraft" className="block text-sm font-medium text-gray-700">자기소개서 초안 (선택 사항)</label>
+                             <button onClick={triggerDraftFileSelect} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1 px-2 rounded-md transition-colors">이전 지원서 업로드</button>
+                             <input type="file" ref={draftFileInputRef} onChange={(e) => handleFileUpload(e, 'initialDraft')} accept=".txt,.md,.pdf" className="hidden" multiple />
+                        </div>
+                        <textarea id="initialDraft" name="initialDraft" value={inputState.initialDraft} onChange={handleInputChange} rows={6} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="기존에 작성한 초안을 붙여넣거나, 다른 곳에 지원했던 이력서/자소서 파일을 업로드하세요."></textarea>
+                         <div className="mt-1 p-2 bg-blue-50 text-blue-800 text-xs rounded-md border border-blue-200">
+                            <strong>Tip:</strong> 다른 지원서라도 업로드하면 AI가 사용자의 경험과 글쓰기 스타일을 파악하여 더 개인화된 결과물을 만듭니다.
+                        </div>
                     </div>
                 </div>
             </div>
@@ -118,8 +312,8 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
                 <div className="flex flex-col sm:flex-row gap-4 sm:gap-8">
                     <label className="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" name="useThinkingMode" checked={inputState.useThinkingMode} onChange={handleInputChange} className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                        <span className="text-gray-700">심층 분석 모드 (Gemini Pro)</span>
-                         <Tooltip text="Gemini 2.5 Pro의 'Thinking Mode'를 활성화하여 더 깊이 있는 분석과 정교한 피드백을 받습니다. 복잡한 직무나 높은 수준의 자기소개서가 필요할 때 유용합니다.">
+                        <span className="text-gray-700">심층 분석 모드 (Gemini 3.0 Pro)</span>
+                         <Tooltip text="Gemini 3.0 Pro의 'Thinking Mode'를 활성화하여 더 깊이 있는 분석과 정교한 피드백을 받습니다. 복잡한 직무나 높은 수준의 자기소개서가 필요할 때 유용합니다.">
                             <InfoIcon />
                         </Tooltip>
                     </label>

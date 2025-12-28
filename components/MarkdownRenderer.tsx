@@ -64,7 +64,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   const htmlContent = markdownToHtml(content);
   return (
     <div
-      className="prose-output max-w-none"
+      className="prose-output max-w-none text-slate-800"
       dangerouslySetInnerHTML={{ __html: htmlContent }}
     />
   );

@@ -1,5 +1,5 @@
 {
-  "name": "AI Cover Letter Pipeline",
-  "description": "An advanced web application that uses a two-step Gemini AI pipeline to generate, analyze, and refine high-quality Korean cover letters (자기소개서) based on user inputs and job descriptions.",
+  "name": "최종 합격을 위한 AI 자소서 치트키",
+  "description": "스펙 쌓을 시간도 없는데 자기소개서를 쓰는데 시간을 많이 쓰시나요? \n\n그렇다고 GPT에게 써달라고 하면 마음에 안들고... \n\n그렇다고 비싼 돈을 내고 컨설팅을 받자니 아깝고... \n\n이런 문제를 해결하기 위해 만든 AI 자소서 치트키입니다. \n여러분의 소중한 경험들을 퀄러티 높은 글로 완성시켜드립니다.",
   "requestFramePermissions": []
 }
