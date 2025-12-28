@@ -1,13 +1,13 @@
 
 import React, { useRef, useState } from 'react';
-import type { InputState } from '../types';
+import type { InputState, UploadedFile } from '../types';
 import { EXPERIENCE_TEMPLATE, JOB_POSTING_TEMPLATE } from '../constants';
 import InfoIcon from './icons/InfoIcon';
 import * as pdfjsLib from 'pdfjs-dist';
 import { extractTextFromImage, fetchJobPostingFromUrl } from '../services/geminiService';
 
 // Set the worker source for pdf.js. This is required for it to work in a web environment.
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@4.5.136/build/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.mjs`;
 
 interface InputSectionProps {
     inputState: InputState;
@@ -24,6 +24,27 @@ const Tooltip: React.FC<{ text: string; children: React.ReactNode }> = ({ text, 
         </div>
     </div>
 );
+
+const FileList: React.FC<{ files: UploadedFile[]; onRemove: (id: string) => void }> = ({ files, onRemove }) => {
+    if (files.length === 0) return null;
+    return (
+        <div className="mt-2 flex flex-wrap gap-2">
+            {files.map(file => (
+                <div key={file.id} className="flex items-center gap-2 bg-slate-100 text-slate-700 text-sm px-3 py-1.5 rounded-full border border-slate-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="max-w-[150px] truncate">{file.name}</span>
+                    <button onClick={() => onRemove(file.id)} className="text-slate-400 hover:text-red-500 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            ))}
+        </div>
+    );
+};
 
 const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, onGenerate, isLoading }) => {
     const userInfoFileInputRef = useRef<HTMLInputElement>(null);
@@ -58,21 +79,23 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
         }));
     };
 
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, targetStateKey: 'userInfo' | 'initialDraft') => {
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, category: 'userInfo' | 'initialDraft') => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
         
-        if (files.length > 5) {
-            alert('최대 5개의 파일만 업로드할 수 있습니다.');
+        // Count existing files in this category
+        const existingCount = inputState.uploadedFiles.filter(f => f.category === category).length;
+        if (existingCount + files.length > 5) {
+            alert('각 항목당 최대 5개의 파일만 업로드할 수 있습니다.');
             e.target.value = ''; // Reset file input
             return;
         }
 
-        const fileReadPromises: Promise<string>[] = [];
+        const fileReadPromises: Promise<UploadedFile>[] = [];
 
         Array.from(files).forEach((file: File) => {
             if (file.type === 'application/pdf') {
-                const promise = new Promise<string>((resolve, reject) => {
+                const promise = new Promise<UploadedFile>((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onload = async (event) => {
                         try {
@@ -87,7 +110,12 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
                                 const textContent = await page.getTextContent();
                                 pdfText += textContent.items.map(item => ('str' in item ? item.str : '')).join(' ') + '\n';
                             }
-                            resolve(`--- START OF FILE: ${file.name} ---\n\n${pdfText}\n--- END OF FILE: ${file.name} ---`);
+                            resolve({
+                                id: Math.random().toString(36).substr(2, 9),
+                                name: file.name,
+                                content: pdfText,
+                                category
+                            });
                         } catch (error) {
                             console.error(`Error parsing PDF ${file.name}:`, error);
                             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -99,11 +127,16 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
                 });
                 fileReadPromises.push(promise);
             } else if (file.type === 'text/plain' || file.type === 'text/markdown') {
-                const promise = new Promise<string>((resolve, reject) => {
+                const promise = new Promise<UploadedFile>((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onload = (event) => {
                        const textContent = event.target?.result as string;
-                       resolve(`--- START OF FILE: ${file.name} ---\n\n${textContent}\n--- END OF FILE: ${file.name} ---`);
+                       resolve({
+                           id: Math.random().toString(36).substr(2, 9),
+                           name: file.name,
+                           content: textContent,
+                           category
+                       });
                     };
                     reader.onerror = () => reject(`파일(${file.name}) 읽기 오류`);
                     reader.readAsText(file, 'UTF-8');
@@ -115,20 +148,25 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
         });
 
         try {
-            const texts = await Promise.all(fileReadPromises);
-            const combinedText = texts.join('\n\n');
+            const newFiles = await Promise.all(fileReadPromises);
             setInputState(prev => ({
                 ...prev,
-                [targetStateKey]: prev[targetStateKey] ? `${prev[targetStateKey]}\n\n${combinedText}` : combinedText
+                uploadedFiles: [...prev.uploadedFiles, ...newFiles]
             }));
-            alert(`${files.length}개 파일의 내용을 성공적으로 불러왔습니다.`);
         } catch (error) {
             alert(String(error));
         } finally {
             if (e.target) {
-                e.target.value = ''; // Reset file input to allow re-uploading the same file
+                e.target.value = ''; // Reset file input
             }
         }
+    };
+
+    const handleRemoveFile = (id: string) => {
+        setInputState(prev => ({
+            ...prev,
+            uploadedFiles: prev.uploadedFiles.filter(f => f.id !== id)
+        }));
     };
 
     const blobToBase64 = (blob: Blob): Promise<string> => {
@@ -158,8 +196,6 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
     
         const imageReadPromises: Promise<string>[] = [];
     
-        // FIX: Replaced for...of loop with forEach and explicitly typed 'file' as File
-        // to resolve type inference issues where 'file' was treated as 'unknown'.
         Array.from(files).forEach((file: File) => {
             const promise = (async () => {
                 try {
@@ -289,6 +325,10 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
                             </div>
                         </div>
                         <textarea id="userInfo" name="userInfo" value={inputState.userInfo} onChange={handleInputChange} rows={18} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="본인의 이력서, 경력기술서, 포트폴리오, 관련 경험, 성과 등을 여기에 붙여넣거나 파일을 업로드하세요."></textarea>
+                        
+                        {/* Display uploaded files for User Info */}
+                        <FileList files={inputState.uploadedFiles.filter(f => f.category === 'userInfo')} onRemove={handleRemoveFile} />
+                        
                         <div className="mt-1 p-2 bg-amber-50 text-amber-800 text-xs rounded-md border border-amber-200">
                             <strong>Tip:</strong> 배경 정보가 구체적이고 풍부할수록 AI가 생성하는 자기소개서의 품질이 향상됩니다.
                         </div>
@@ -300,6 +340,10 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
                              <input type="file" ref={draftFileInputRef} onChange={(e) => handleFileUpload(e, 'initialDraft')} accept=".txt,.md,.pdf" className="hidden" multiple />
                         </div>
                         <textarea id="initialDraft" name="initialDraft" value={inputState.initialDraft} onChange={handleInputChange} rows={6} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="기존에 작성한 초안을 붙여넣거나, 다른 곳에 지원했던 이력서/자소서 파일을 업로드하세요."></textarea>
+                        
+                        {/* Display uploaded files for Initial Draft */}
+                        <FileList files={inputState.uploadedFiles.filter(f => f.category === 'initialDraft')} onRemove={handleRemoveFile} />
+
                          <div className="mt-1 p-2 bg-blue-50 text-blue-800 text-xs rounded-md border border-blue-200">
                             <strong>Tip:</strong> 다른 지원서라도 업로드하면 AI가 사용자의 경험과 글쓰기 스타일을 파악하여 더 개인화된 결과물을 만듭니다.
                         </div>

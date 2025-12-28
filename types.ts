@@ -1,4 +1,12 @@
+
 export type JobOption = 'marketing' | 'it' | 'sales_hr' | 'management' | 'other';
+
+export interface UploadedFile {
+    id: string;
+    name: string;
+    content: string;
+    category: 'userInfo' | 'initialDraft';
+}
 
 export interface InputState {
     jobRole: string;
@@ -6,6 +14,7 @@ export interface InputState {
     userInfo: string;
     jasaoseoQuestions: string;
     initialDraft: string;
+    uploadedFiles: UploadedFile[];
     useSearchGrounding: boolean;
     useThinkingMode: boolean;
 }

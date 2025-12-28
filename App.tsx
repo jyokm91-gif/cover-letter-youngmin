@@ -20,6 +20,7 @@ const App: React.FC = () => {
         userInfo: '',
         jasaoseoQuestions: '',
         initialDraft: '',
+        uploadedFiles: [],
         useSearchGrounding: false,
         useThinkingMode: true,
     });
@@ -34,13 +35,27 @@ const App: React.FC = () => {
     const [revisionRequest, setRevisionRequest] = useState<string>('');
 
     const handleGeneratePipeline = useCallback(async () => {
-        const { jobRole, jobPosting, userInfo, jasaoseoQuestions, initialDraft, useSearchGrounding, useThinkingMode } = inputState;
+        const { jobRole, jobPosting, userInfo, jasaoseoQuestions, initialDraft, uploadedFiles, useSearchGrounding, useThinkingMode } = inputState;
         const jobOption = jobRole as JobOption;
 
-        if (!jobRole || !jobPosting || !userInfo || !jasaoseoQuestions) {
-            alert("직무 선택, 채용 공고, 사용자 정보, 자소서 문항은 필수 입력 항목입니다.");
+        if (!jobRole || !jobPosting || !jasaoseoQuestions || (!userInfo && !uploadedFiles.some(f => f.category === 'userInfo'))) {
+            alert("직무 선택, 채용 공고, 사용자 정보(텍스트 또는 파일), 자소서 문항은 필수 입력 항목입니다.");
             return;
         }
+
+        // Combine manual text and file content for User Info
+        const userInfoFileContent = uploadedFiles
+            .filter(f => f.category === 'userInfo')
+            .map(f => `[첨부파일: ${f.name}]\n${f.content}`)
+            .join('\n\n');
+        const fullUserInfo = `${userInfo}\n\n${userInfoFileContent}`.trim();
+
+        // Combine manual text and file content for Initial Draft
+        const draftFileContent = uploadedFiles
+            .filter(f => f.category === 'initialDraft')
+            .map(f => `[첨부파일: ${f.name}]\n${f.content}`)
+            .join('\n\n');
+        const fullInitialDraft = `${initialDraft}\n\n${draftFileContent}`.trim();
 
         setIsLoading(true);
         setError(null);
@@ -55,7 +70,7 @@ const App: React.FC = () => {
 [필수 입력 데이터]
 [선택된 직무]: ${jobRole}
 [사용자 배경 정보]:
-${userInfo}
+${fullUserInfo}
 
 [채용 정보]:
 ${jobPosting}
@@ -63,7 +78,7 @@ ${jobPosting}
 [문항 정보]:
 ${jasaoseoQuestions}
 
-${initialDraft ? `[사용자 제공 초안 (참고용)]:\n${initialDraft}` : ''}
+${fullInitialDraft ? `[사용자 제공 초안 (참고용)]:\n${fullInitialDraft}` : ''}
 `;
             const blueprint = await callGemini(PROMPT_STEP_1_ARCHITECT, prompt1, jobOption, { useSearchGrounding, useThinkingMode });
             
@@ -123,16 +138,11 @@ ${generatedDraft}
 ${strategyReport}
 
 [사용자 배경 정보 원본]:
-${userInfo}
+${fullUserInfo}
 `;
             const finalResult = await callGemini(PROMPT_STEP_5_EDITOR, prompt5, jobOption, { useThinkingMode });
             setFinalJasaoseo(finalResult);
             
-            // Note: Proofreading is now integrated into Step 5 (Editor). 
-            // We skip the separate proofreading call to save time, unless explicitly needed.
-            // If the user wants the structured proofreading JSON view, they can click "맞춤법 검사" later if we implement a separate button, 
-            // but for now, we rely on the Editor's output.
-
         } catch (err) {
             console.error("Pipeline error:", err);
             const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.";
@@ -154,8 +164,15 @@ ${userInfo}
         setError(null);
 
         try {
-            const { jobRole, userInfo, useThinkingMode } = inputState;
+            const { jobRole, userInfo, uploadedFiles, useThinkingMode } = inputState;
             const jobOption = jobRole as JobOption;
+
+            // Reconstruct full user info for context
+            const userInfoFileContent = uploadedFiles
+            .filter(f => f.category === 'userInfo')
+            .map(f => `[첨부파일: ${f.name}]\n${f.content}`)
+            .join('\n\n');
+            const fullUserInfo = `${userInfo}\n\n${userInfoFileContent}`.trim();
 
             // --- 수정 단계 (Using Editor Persona) ---
             // Treat the user's request as the "Strategy" for the Editor
@@ -167,7 +184,7 @@ ${finalJasaoseo}
 ${revisionRequest}
 
 [사용자 배경 정보 원본]:
-${userInfo}
+${fullUserInfo}
 `;
             
             const revisedJasaoseo = await callGemini(PROMPT_STEP_5_EDITOR, revisionPrompt, jobOption, { useThinkingMode });
