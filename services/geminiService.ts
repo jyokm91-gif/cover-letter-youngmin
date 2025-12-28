@@ -9,9 +9,9 @@ export interface GeminiCallOptions {
 
 // 🆕 API 키를 가져오는 헬퍼 함수 추가
 const getApiKey = (): string => {
-  const key = import.meta.env.VITE_GOOGLE_API_KEY;
+  const key = import.meta.env.GOOGLE_API_KEY;
   if (!key) {
-    throw new Error('VITE_GOOGLE_API_KEY 환경 변수가 설정되지 않았습니다. Vercel 설정을 확인해주세요.');
+    throw new Error('GOOGLE_API_KEY 환경 변수가 설정되지 않았습니다. Vercel 설정을 확인해주세요.');
   }
   return key;
 };
