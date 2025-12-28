@@ -15,7 +15,7 @@ export const callGemini = async (
   options: GeminiCallOptions = {}
 ): Promise<string> => {
     // Initialize the AI client just-in-time to ensure the API key is available.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    const ai = new GoogleGenAI({ apiKey: AIzaSyBYoe5XAoBnt5g1NNLIWVk5mI-lAEvY6eQ });
     
     let modelName: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -76,7 +76,7 @@ export const callProofreaderGemini = async (
     textToProofread: string
 ): Promise<ProofreadingResult> => {
     // Initialize the AI client just-in-time to ensure the API key is available.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    const ai = new GoogleGenAI({ apiKey: AIzaSyBYoe5XAoBnt5g1NNLIWVk5mI-lAEvY6eQ });
     
     try {
         const response = await ai.models.generateContent({
@@ -116,7 +116,7 @@ export const extractTextFromImage = async (
   base64ImageData: string,
   mimeType: string
 ): Promise<string> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    const ai = new GoogleGenAI({ apiKey: AIzaSyBYoe5XAoBnt5g1NNLIWVk5mI-lAEvY6eQ });
 
     const imagePart = {
         inlineData: {
