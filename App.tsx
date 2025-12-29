@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { InputState, JobOption, ProofreadingIssue } from './types';
 import { 
     PROMPT_STEP_1_ARCHITECT, 
@@ -21,6 +21,16 @@ const AppContent: React.FC = () => {
     const { user, userProfile, canUseService, useCredit, getRemainingCredits } = useAuth();
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [showPricingModal, setShowPricingModal] = useState(false);
+    
+    // URL 파라미터 확인하여 로그인 모달 자동 열기
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('action') === 'login' && !user) {
+            setShowAuthModal(true);
+            // URL에서 파라미터 제거
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+    }, [user]);
     
     const [inputState, setInputState] = useState<InputState>({
         jobRole: '',
