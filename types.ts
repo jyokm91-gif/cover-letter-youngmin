@@ -5,7 +5,7 @@ export interface UploadedFile {
     id: string;
     name: string;
     content: string;
-    category: 'userInfo' | 'initialDraft';
+    category: 'userInfo' | 'initialDraft' | 'jobPosting';
 }
 
 export interface InputState {
