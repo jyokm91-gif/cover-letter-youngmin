@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "431914247180",
+    "project_id": "coverletter-370ad",
+    "storage_bucket": "coverletter-370ad.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:431914247180:android:43abd5e82a9a5c5fc9ba29",
+        "android_client_info": {
+          "package_name": "android.coverletter_careerflow22"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "431914247180-v5u0kp08bhthpatqdgn6hup0kr51g24v.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB8SG-VeW8LuNcpNI2YX4F4MaKPdsm_SUg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "431914247180-v5u0kp08bhthpatqdgn6hup0kr51g24v.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
