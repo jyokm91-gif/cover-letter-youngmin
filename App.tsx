@@ -12,8 +12,16 @@ import { callGemini, callProofreaderGemini } from './services/geminiService';
 import InputSection from './components/InputSection';
 import LoadingIndicator from './components/LoadingIndicator';
 import OutputSection from './components/OutputSection';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import UserHeader from './components/UserHeader';
+import AuthModal from './components/AuthModal';
+import PricingModal from './components/PricingModal';
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
+    const { user, userProfile, canUseService, decrementFreeTrial } = useAuth();
+    const [showAuthModal, setShowAuthModal] = useState(false);
+    const [showPricingModal, setShowPricingModal] = useState(false);
+    
     const [inputState, setInputState] = useState<InputState>({
         jobRole: '',
         jobPosting: '',
@@ -35,6 +43,18 @@ const App: React.FC = () => {
     const [revisionRequest, setRevisionRequest] = useState<string>('');
 
     const handleGeneratePipeline = useCallback(async () => {
+        // 로그인 체크
+        if (!user) {
+            setShowAuthModal(true);
+            return;
+        }
+        
+        // 사용 가능 여부 체크
+        if (!canUseService()) {
+            setShowPricingModal(true);
+            return;
+        }
+        
         const { jobRole, jobPosting, userInfo, jasaoseoQuestions, initialDraft, uploadedFiles, useSearchGrounding, useThinkingMode } = inputState;
         const jobOption = jobRole as JobOption;
 
@@ -57,6 +77,13 @@ const App: React.FC = () => {
             .join('\n\n');
         const fullInitialDraft = `${initialDraft}\n\n${draftFileContent}`.trim();
 
+        // Combine manual text and file content for Job Posting
+        const jobPostingFileContent = uploadedFiles
+            .filter(f => f.category === 'jobPosting')
+            .map(f => `[첨부파일: ${f.name}]\n${f.content}`)
+            .join('\n\n');
+        const fullJobPosting = `${jobPosting}\n\n${jobPostingFileContent}`.trim();
+
         setIsLoading(true);
         setError(null);
         setAnalysisReport('');
@@ -73,7 +100,7 @@ const App: React.FC = () => {
 ${fullUserInfo}
 
 [채용 정보]:
-${jobPosting}
+${fullJobPosting}
 
 [문항 정보]:
 ${jasaoseoQuestions}
@@ -91,7 +118,7 @@ ${blueprint}
 [선택된 직무]: ${jobRole}
 
 [채용 정보]:
-${jobPosting}
+${fullJobPosting}
 
 [문항 정보]:
 ${jasaoseoQuestions}
@@ -107,7 +134,7 @@ ${generatedDraft}
 [선택된 직무]: ${jobRole}
 
 [채용 공고(JD)]:
-${jobPosting}
+${fullJobPosting}
 `;
             const critiqueReport = await callGemini(PROMPT_STEP_3_CRITIC, prompt3, jobOption, { useThinkingMode });
 
@@ -121,7 +148,7 @@ ${generatedDraft}
 ${critiqueReport}
 
 [채용 공고(JD)]:
-${jobPosting}
+${fullJobPosting}
 `;
             const strategyReport = await callGemini(PROMPT_STEP_4_STRATEGIST, prompt4, jobOption, { useThinkingMode });
             
@@ -143,6 +170,9 @@ ${fullUserInfo}
             const finalResult = await callGemini(PROMPT_STEP_5_EDITOR, prompt5, jobOption, { useThinkingMode });
             setFinalJasaoseo(finalResult);
             
+            // 무료 체험 횟수 차감 (구독자가 아닌 경우에만)
+            await decrementFreeTrial();
+            
         } catch (err) {
             console.error("Pipeline error:", err);
             const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다.";
@@ -152,7 +182,7 @@ ${fullUserInfo}
             setIsLoading(false);
             setLoadingStatus('');
         }
-    }, [inputState]);
+    }, [inputState, user, canUseService, decrementFreeTrial]);
 
     const handleRevision = useCallback(async () => {
         if (!revisionRequest.trim()) {
@@ -203,44 +233,78 @@ ${fullUserInfo}
     }, [revisionRequest, finalJasaoseo, inputState]);
 
     return (
-        <div className="container mx-auto max-w-7xl p-4 md:p-8">
-            <header className="mb-8 text-center">
-                <div className="flex items-center justify-center gap-2 mb-4">
-                    <a href="./index.html" className="text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                        </svg>
-                        홈으로 돌아가기
+        <div className="min-h-screen bg-slate-100">
+            {/* 상단 네비게이션 바 */}
+            <nav className="bg-white shadow-sm sticky top-0 z-40">
+                <div className="container mx-auto max-w-7xl px-4 py-3 flex items-center justify-between">
+                    <a href="./index.html" className="flex items-center gap-2">
+                        <span className="text-xl font-bold text-blue-600">CareerFlow</span>
+                        <span className="text-xl font-light text-slate-800">AI</span>
                     </a>
+                    <UserHeader onOpenPricing={() => setShowPricingModal(true)} />
                 </div>
-                <h1 className="text-3xl md:text-4xl font-bold text-slate-800">최종 합격을 위한 AI 자소서 치트키</h1>
-                <p className="text-lg text-slate-600 mt-2">단 5분 만에, 인사 담당자를 사로잡는 자기소개서를 완성하세요.</p>
-            </header>
+            </nav>
             
-            <InputSection
-                inputState={inputState}
-                setInputState={setInputState}
-                onGenerate={handleGeneratePipeline}
-                isLoading={isLoading}
-            />
-
-            {isLoading && <LoadingIndicator status={loadingStatus} />}
-            
-            {error && <div className="text-center text-red-600 bg-red-100 p-4 rounded-lg my-4">{error}</div>}
-
-            {!isLoading && (analysisReport || finalJasaoseo) && (
-                <OutputSection 
-                    analysisReport={analysisReport} 
-                    finalJasaoseo={finalJasaoseo}
-                    proofreadingResult={proofreadingResult}
-                    revisionRequest={revisionRequest}
-                    setRevisionRequest={setRevisionRequest}
-                    onRevision={handleRevision}
-                    isRevising={isRevising}
+            <div className="container mx-auto max-w-7xl p-4 md:p-8">
+                <header className="mb-8 text-center">
+                    <h1 className="text-3xl md:text-4xl font-bold text-slate-800">최종 합격을 위한 AI 자소서 치트키</h1>
+                    <p className="text-lg text-slate-600 mt-2">단 5분 만에, 인사 담당자를 사로잡는 자기소개서를 완성하세요.</p>
+                    
+                    {/* 무료 체험 남은 횟수 표시 */}
+                    {userProfile && userProfile.subscriptionStatus !== 'active' && (
+                        <div className="mt-4 inline-flex items-center gap-2 bg-amber-50 text-amber-800 px-4 py-2 rounded-full text-sm font-medium border border-amber-200">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            무료 체험 {userProfile.freeTrialsRemaining}회 남음
+                            <button 
+                                onClick={() => setShowPricingModal(true)}
+                                className="ml-2 text-blue-600 hover:underline"
+                            >
+                                Pro 업그레이드
+                            </button>
+                        </div>
+                    )}
+                </header>
+                
+                <InputSection
+                    inputState={inputState}
+                    setInputState={setInputState}
+                    onGenerate={handleGeneratePipeline}
                     isLoading={isLoading}
                 />
-            )}
+
+                {isLoading && <LoadingIndicator status={loadingStatus} />}
+                
+                {error && <div className="text-center text-red-600 bg-red-100 p-4 rounded-lg my-4">{error}</div>}
+
+                {!isLoading && (analysisReport || finalJasaoseo) && (
+                    <OutputSection 
+                        analysisReport={analysisReport} 
+                        finalJasaoseo={finalJasaoseo}
+                        proofreadingResult={proofreadingResult}
+                        revisionRequest={revisionRequest}
+                        setRevisionRequest={setRevisionRequest}
+                        onRevision={handleRevision}
+                        isRevising={isRevising}
+                        isLoading={isLoading}
+                    />
+                )}
+            </div>
+            
+            {/* 모달들 */}
+            <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
+            <PricingModal isOpen={showPricingModal} onClose={() => setShowPricingModal(false)} />
         </div>
+    );
+};
+
+// AuthProvider로 감싸는 최상위 App 컴포넌트
+const App: React.FC = () => {
+    return (
+        <AuthProvider>
+            <AppContent />
+        </AuthProvider>
     );
 };
 
