@@ -4,10 +4,11 @@ import type { InputState, UploadedFile } from '../types';
 import { EXPERIENCE_TEMPLATE, JOB_POSTING_TEMPLATE } from '../constants';
 import InfoIcon from './icons/InfoIcon';
 import * as pdfjsLib from 'pdfjs-dist';
-import { extractTextFromImage, fetchJobPostingFromUrl } from '../services/geminiService';
+import { extractTextFromImage } from '../services/geminiService';
 
-// Set the worker source for pdf.js using the legacy build for better compatibility
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs`;
+// Set the worker source dynamically based on the installed pdfjs-dist version
+const pdfjsVersion = pdfjsLib.version;
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.worker.min.mjs`;
 
 interface InputSectionProps {
     inputState: InputState;
@@ -50,9 +51,9 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
     const userInfoFileInputRef = useRef<HTMLInputElement>(null);
     const draftFileInputRef = useRef<HTMLInputElement>(null);
     const jobPostingFileInputRef = useRef<HTMLInputElement>(null);
+    const jobPostingImageInputRef = useRef<HTMLInputElement>(null);
     const [isExtractingText, setIsExtractingText] = useState(false);
-    const [jobPostingUrl, setJobPostingUrl] = useState('');
-    const [isFetchingUrl, setIsFetchingUrl] = useState(false);
+    const [isUploadingJobPosting, setIsUploadingJobPosting] = useState(false);
     
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value, type } = e.target;
@@ -79,9 +80,13 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
         }));
     };
 
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, category: 'userInfo' | 'initialDraft') => {
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, category: 'userInfo' | 'initialDraft' | 'jobPosting') => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
+        
+        if (category === 'jobPosting') {
+            setIsUploadingJobPosting(true);
+        }
         
         // Count existing files in this category
         const existingCount = inputState.uploadedFiles.filter(f => f.category === category).length;
@@ -164,6 +169,7 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
             if (e.target) {
                 e.target.value = ''; // Reset file input
             }
+            setIsUploadingJobPosting(false);
         }
     };
 
@@ -234,33 +240,10 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
         }
     };
 
-    const handleFetchJobPosting = async () => {
-        if (!jobPostingUrl.trim()) {
-            alert('채용 공고 URL을 입력해주세요.');
-            return;
-        }
-        setIsFetchingUrl(true);
-        try {
-            const fetchedText = await fetchJobPostingFromUrl(jobPostingUrl);
-            setInputState(prev => ({
-                ...prev,
-                jobPosting: prev.jobPosting 
-                    ? `${prev.jobPosting}\n\n--- URL에서 가져온 내용: ${jobPostingUrl} ---\n\n${fetchedText}\n--- URL 내용 끝 ---` 
-                    : fetchedText
-            }));
-            alert('채용 공고를 성공적으로 가져왔습니다.');
-            setJobPostingUrl(''); // Clear the input after success
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            alert(`오류: ${errorMessage}`);
-        } finally {
-            setIsFetchingUrl(false);
-        }
-    };
-
     const triggerUserInfoFileSelect = () => userInfoFileInputRef.current?.click();
     const triggerDraftFileSelect = () => draftFileInputRef.current?.click();
     const triggerJobPostingFileSelect = () => jobPostingFileInputRef.current?.click();
+    const triggerJobPostingImageSelect = () => jobPostingImageInputRef.current?.click();
 
     return (
         <div className="bg-white p-6 rounded-2xl shadow-lg mb-8">
@@ -283,7 +266,17 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
                             <label htmlFor="jobPosting" className="block text-sm font-medium text-gray-700">채용 공고 (JD)</label>
                             <div className="flex items-center gap-2">
                                 <button onClick={addJobPostingTemplate} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1 px-2 rounded-md transition-colors">템플릿 추가</button>
-                                <button onClick={triggerJobPostingFileSelect} disabled={isExtractingText} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1 px-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-wait flex items-center justify-center gap-1">
+                                <button onClick={triggerJobPostingFileSelect} disabled={isUploadingJobPosting} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1 px-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-wait flex items-center justify-center gap-1">
+                                    {isUploadingJobPosting && (
+                                        <svg className="animate-spin h-3 w-3 text-slate-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    )}
+                                    {isUploadingJobPosting ? '업로드 중...' : '파일 업로드'}
+                                </button>
+                                <input type="file" ref={jobPostingFileInputRef} onChange={(e) => handleFileUpload(e, 'jobPosting')} accept=".txt,.md,.pdf" className="hidden" multiple />
+                                <button onClick={triggerJobPostingImageSelect} disabled={isExtractingText} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1 px-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-wait flex items-center justify-center gap-1">
                                     {isExtractingText && (
                                         <svg className="animate-spin h-3 w-3 text-slate-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -292,27 +285,13 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
                                     )}
                                     {isExtractingText ? '추출 중...' : '이미지 업로드'}
                                 </button>
-                                <input type="file" ref={jobPostingFileInputRef} onChange={handleImageUpload} accept="image/png,image/jpeg,image/webp" className="hidden" multiple />
+                                <input type="file" ref={jobPostingImageInputRef} onChange={handleImageUpload} accept="image/png,image/jpeg,image/webp" className="hidden" multiple />
                             </div>
                         </div>
-                        <div className="flex items-center gap-2 mb-2">
-                            <input 
-                                type="url" 
-                                value={jobPostingUrl}
-                                onChange={(e) => setJobPostingUrl(e.target.value)}
-                                placeholder="채용 공고 URL을 여기에 붙여넣으세요"
-                                className="flex-grow p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                disabled={isFetchingUrl}
-                            />
-                            <button 
-                                onClick={handleFetchJobPosting}
-                                disabled={isFetchingUrl || !jobPostingUrl.trim()}
-                                className="bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-wait"
-                            >
-                                {isFetchingUrl ? '가져오는 중...' : '가져오기'}
-                            </button>
-                        </div>
-                        <textarea id="jobPosting" name="jobPosting" value={inputState.jobPosting} onChange={handleInputChange} rows={8} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="지원할 회사의 채용 공고 내용을 여기에 붙여넣거나, 위에서 URL을 가져오세요..."></textarea>
+                        <textarea id="jobPosting" name="jobPosting" value={inputState.jobPosting} onChange={handleInputChange} rows={8} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="지원할 회사의 채용 공고 내용을 여기에 붙여넣거나 파일을 업로드하세요..."></textarea>
+                        
+                        {/* Display uploaded files for Job Posting */}
+                        <FileList files={inputState.uploadedFiles.filter(f => f.category === 'jobPosting')} onRemove={handleRemoveFile} />
                     </div>
                     <div>
                         <label htmlFor="jasaoseoQuestions" className="block text-sm font-medium text-gray-700 mb-1">자기소개서 문항</label>
