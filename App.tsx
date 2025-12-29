@@ -16,11 +16,19 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import UserHeader from './components/UserHeader';
 import AuthModal from './components/AuthModal';
 import PricingModal from './components/PricingModal';
+import MyDocumentsModal from './components/MyDocumentsModal';
+import SaveDocumentModal from './components/SaveDocumentModal';
 
 const AppContent: React.FC = () => {
     const { user, userProfile, canUseService, useCredit, getRemainingCredits } = useAuth();
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [showPricingModal, setShowPricingModal] = useState(false);
+    const [showMyDocuments, setShowMyDocuments] = useState(false);
+    const [showSaveModal, setShowSaveModal] = useState(false);
+    
+    // 현재 작업 중인 문서 정보
+    const [currentDocId, setCurrentDocId] = useState<string | null>(null);
+    const [currentDocTitle, setCurrentDocTitle] = useState<string>('');
     
     // URL 파라미터 확인하여 로그인 모달 자동 열기
     useEffect(() => {
@@ -51,6 +59,58 @@ const AppContent: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isRevising, setIsRevising] = useState<boolean>(false);
     const [revisionRequest, setRevisionRequest] = useState<string>('');
+
+    // 문서 불러오기 핸들러
+    const handleLoadDocument = (doc: any) => {
+        setInputState({
+            jobRole: doc.jobRole || '',
+            jobPosting: doc.jobPosting || '',
+            userInfo: doc.userInfo || '',
+            jasaoseoQuestions: doc.jasaoseoQuestions || '',
+            initialDraft: doc.initialDraft || '',
+            uploadedFiles: [],
+            useSearchGrounding: false,
+            useThinkingMode: true,
+        });
+        setFinalJasaoseo(doc.finalJasaoseo || '');
+        setAnalysisReport(doc.analysisReport || '');
+        setCurrentDocId(doc.id);
+        setCurrentDocTitle(doc.title);
+        setError(null);
+        setProofreadingResult(null);
+    };
+
+    // 저장 성공 핸들러
+    const handleSaveSuccess = (docId: string, title: string) => {
+        setCurrentDocId(docId);
+        setCurrentDocTitle(title);
+        alert('저장되었습니다!');
+    };
+
+    // 새 문서 시작
+    const handleNewDocument = () => {
+        if (inputState.userInfo || inputState.jobPosting || finalJasaoseo) {
+            if (!confirm('현재 작성 중인 내용이 있습니다. 새 문서를 시작하시겠습니까?')) {
+                return;
+            }
+        }
+        setInputState({
+            jobRole: '',
+            jobPosting: '',
+            userInfo: '',
+            jasaoseoQuestions: '',
+            initialDraft: '',
+            uploadedFiles: [],
+            useSearchGrounding: false,
+            useThinkingMode: true,
+        });
+        setFinalJasaoseo('');
+        setAnalysisReport('');
+        setCurrentDocId(null);
+        setCurrentDocTitle('');
+        setError(null);
+        setProofreadingResult(null);
+    };
 
     const handleGeneratePipeline = useCallback(async () => {
         // 로그인 체크
@@ -251,8 +311,64 @@ ${fullUserInfo}
                         <span className="text-xl font-bold text-blue-600">CareerFlow</span>
                         <span className="text-xl font-light text-slate-800">AI</span>
                     </a>
-                    <UserHeader onOpenPricing={() => setShowPricingModal(true)} />
+                    
+                    <div className="flex items-center gap-2">
+                        {/* 문서 관련 버튼들 (로그인 시에만 표시) */}
+                        {user && (
+                            <>
+                                <button
+                                    onClick={handleNewDocument}
+                                    className="hidden sm:flex items-center gap-1 text-slate-600 hover:text-slate-800 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors text-sm font-medium"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    새 문서
+                                </button>
+                                <button
+                                    onClick={() => setShowMyDocuments(true)}
+                                    className="hidden sm:flex items-center gap-1 text-slate-600 hover:text-slate-800 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors text-sm font-medium"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                    </svg>
+                                    내 문서함
+                                </button>
+                                <button
+                                    onClick={() => setShowSaveModal(true)}
+                                    disabled={!inputState.jobRole && !inputState.userInfo && !finalJasaoseo}
+                                    className="hidden sm:flex items-center gap-1 text-blue-600 hover:text-blue-700 px-3 py-2 rounded-lg hover:bg-blue-50 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                                    </svg>
+                                    {currentDocId ? '업데이트' : '저장'}
+                                </button>
+                            </>
+                        )}
+                        <UserHeader onOpenPricing={() => setShowPricingModal(true)} />
+                    </div>
                 </div>
+                
+                {/* 현재 문서 표시 (저장된 문서 작업 중일 때) */}
+                {currentDocId && (
+                    <div className="bg-blue-50 border-t border-blue-100">
+                        <div className="container mx-auto max-w-7xl px-4 py-2 flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-sm text-blue-700">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span className="font-medium">{currentDocTitle}</span>
+                            </div>
+                            <button
+                                onClick={handleNewDocument}
+                                className="text-xs text-blue-600 hover:underline"
+                            >
+                                새 문서 시작
+                            </button>
+                        </div>
+                    </div>
+                )}
             </nav>
             
             <div className="container mx-auto max-w-7xl p-4 md:p-8">
@@ -320,6 +436,21 @@ ${fullUserInfo}
             {/* 모달들 */}
             <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
             <PricingModal isOpen={showPricingModal} onClose={() => setShowPricingModal(false)} />
+            <MyDocumentsModal 
+                isOpen={showMyDocuments} 
+                onClose={() => setShowMyDocuments(false)} 
+                onLoadDocument={handleLoadDocument}
+            />
+            <SaveDocumentModal
+                isOpen={showSaveModal}
+                onClose={() => setShowSaveModal(false)}
+                inputState={inputState}
+                finalJasaoseo={finalJasaoseo}
+                analysisReport={analysisReport}
+                existingDocId={currentDocId}
+                existingTitle={currentDocTitle}
+                onSaveSuccess={handleSaveSuccess}
+            />
         </div>
     );
 };
