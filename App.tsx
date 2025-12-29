@@ -18,7 +18,7 @@ import AuthModal from './components/AuthModal';
 import PricingModal from './components/PricingModal';
 
 const AppContent: React.FC = () => {
-    const { user, userProfile, canUseService, decrementFreeTrial } = useAuth();
+    const { user, userProfile, canUseService, useCredit, getRemainingCredits } = useAuth();
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [showPricingModal, setShowPricingModal] = useState(false);
     
@@ -170,8 +170,8 @@ ${fullUserInfo}
             const finalResult = await callGemini(PROMPT_STEP_5_EDITOR, prompt5, jobOption, { useThinkingMode });
             setFinalJasaoseo(finalResult);
             
-            // 무료 체험 횟수 차감 (구독자가 아닌 경우에만)
-            await decrementFreeTrial();
+            // 크레딧 차감 (구독자가 아닌 경우에만)
+            await useCredit();
             
         } catch (err) {
             console.error("Pipeline error:", err);
@@ -182,7 +182,7 @@ ${fullUserInfo}
             setIsLoading(false);
             setLoadingStatus('');
         }
-    }, [inputState, user, canUseService, decrementFreeTrial]);
+    }, [inputState, user, canUseService, useCredit]);
 
     const handleRevision = useCallback(async () => {
         if (!revisionRequest.trim()) {
@@ -250,21 +250,36 @@ ${fullUserInfo}
                     <h1 className="text-3xl md:text-4xl font-bold text-slate-800">최종 합격을 위한 AI 자소서 치트키</h1>
                     <p className="text-lg text-slate-600 mt-2">단 5분 만에, 인사 담당자를 사로잡는 자기소개서를 완성하세요.</p>
                     
-                    {/* 무료 체험 남은 횟수 표시 */}
-                    {userProfile && userProfile.subscriptionStatus !== 'active' && (
-                        <div className="mt-4 inline-flex items-center gap-2 bg-amber-50 text-amber-800 px-4 py-2 rounded-full text-sm font-medium border border-amber-200">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            무료 체험 {userProfile.freeTrialsRemaining}회 남음
-                            <button 
-                                onClick={() => setShowPricingModal(true)}
-                                className="ml-2 text-blue-600 hover:underline"
-                            >
-                                Pro 업그레이드
-                            </button>
-                        </div>
-                    )}
+                    {/* 남은 횟수 표시 */}
+                    {userProfile && (() => {
+                        const credits = getRemainingCredits();
+                        if (credits.type === 'unlimited') {
+                            return (
+                                <div className="mt-4 inline-flex items-center gap-2 bg-green-50 text-green-800 px-4 py-2 rounded-full text-sm font-medium border border-green-200">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    프리미엄 무제한 이용 중
+                                </div>
+                            );
+                        }
+                        return (
+                            <div className="mt-4 inline-flex items-center gap-2 bg-amber-50 text-amber-800 px-4 py-2 rounded-full text-sm font-medium border border-amber-200">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                {credits.type === 'points' 
+                                    ? `포인트 ${credits.count}회 남음` 
+                                    : `이번 달 무료 ${credits.count}회 남음`}
+                                <button 
+                                    onClick={() => setShowPricingModal(true)}
+                                    className="ml-2 text-blue-600 hover:underline"
+                                >
+                                    충전하기
+                                </button>
+                            </div>
+                        );
+                    })()}
                 </header>
                 
                 <InputSection
