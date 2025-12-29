@@ -1,7 +1,7 @@
 {
-  "name": "최종-합격을-위한-ai-자소서-치트키",
+  "name": "careerflow-ai",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,7 @@
     "react": "^19.2.0",
     "@google/genai": "^1.27.0",
     "react-dom": "^19.2.0",
-    "pdfjs-dist": "^4.5.136"
+    "pdfjs-dist": "^4.4.168"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -1,13 +1,13 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import type { InputState, UploadedFile } from '../types';
 import { EXPERIENCE_TEMPLATE, JOB_POSTING_TEMPLATE } from '../constants';
 import InfoIcon from './icons/InfoIcon';
 import * as pdfjsLib from 'pdfjs-dist';
 import { extractTextFromImage, fetchJobPostingFromUrl } from '../services/geminiService';
 
-// Set the worker source for pdf.js. This is required for it to work in a web environment.
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.mjs`;
+// Set the worker source for pdf.js using the legacy build for better compatibility
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs`;
 
 interface InputSectionProps {
     inputState: InputState;
@@ -103,7 +103,12 @@ const InputSection: React.FC<InputSectionProps> = ({ inputState, setInputState, 
                             if (!arrayBuffer) {
                                 return reject(`파일(${file.name})을 읽을 수 없습니다.`);
                             }
-                            const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+                            const pdf = await pdfjsLib.getDocument({ 
+                                data: new Uint8Array(arrayBuffer),
+                                useWorkerFetch: false,
+                                isEvalSupported: false,
+                                useSystemFonts: true
+                            }).promise;
                             let pdfText = '';
                             for (let i = 1; i <= pdf.numPages; i++) {
                                 const page = await pdf.getPage(i);

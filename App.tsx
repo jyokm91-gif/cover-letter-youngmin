@@ -205,6 +205,14 @@ ${fullUserInfo}
     return (
         <div className="container mx-auto max-w-7xl p-4 md:p-8">
             <header className="mb-8 text-center">
+                <div className="flex items-center justify-center gap-2 mb-4">
+                    <a href="./index.html" className="text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        </svg>
+                        홈으로 돌아가기
+                    </a>
+                </div>
                 <h1 className="text-3xl md:text-4xl font-bold text-slate-800">최종 합격을 위한 AI 자소서 치트키</h1>
                 <p className="text-lg text-slate-600 mt-2">단 5분 만에, 인사 담당자를 사로잡는 자기소개서를 완성하세요.</p>
             </header>
